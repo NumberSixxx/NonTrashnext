@@ -469,66 +469,6 @@ def install(package, friendly: str = None, ignore: bool = False, reinstall: bool
     return res
 
 
-# execute git command
-def git(arg: str, folder: str = None, ignore: bool = False, optional: bool = False): # pylint: disable=unused-argument
-    t_start = time.time()
-    if args.skip_git:
-        return ''
-    if 'google.colab' in sys.modules:
-        return ''
-    git_cmd = os.environ.get('GIT', "git")
-    if git_cmd != "git":
-        git_cmd = os.path.abspath(git_cmd)
-    result = subprocess.run(f'"{git_cmd}" {arg}', check=False, shell=True, env=os.environ, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=folder or '.')
-    stdout = result.stdout.decode(encoding="utf8", errors="ignore")
-    if len(result.stderr) > 0:
-        stdout += ('\n' if len(stdout) > 0 else '') + result.stderr.decode(encoding="utf8", errors="ignore")
-    stdout = stdout.strip()
-    if result.returncode != 0 and not ignore:
-        if folder is None:
-            folder = 'root'
-        if "couldn't find remote ref" in stdout: # not a git repo
-            log.error(f'Git: folder="{folder}" could not identify repository')
-        elif "no submodule mapping found" in stdout:
-            log.warning(f'Git: folder="{folder}" submodules changed')
-        elif 'or stash them' in stdout:
-            log.error(f'Git: folder="{folder}" local changes detected')
-        else:
-            log.error(f'Git: folder="{folder}" arg="{arg}" output={stdout}')
-        errors.append(f'git: {folder}')
-    ts('git', t_start)
-    return stdout
-
-
-# reattach as needed as head can get detached
-def branch(folder=None):
-    # if args.experimental:
-    #    return None
-    t_start = time.time()
-    if not os.path.exists(os.path.join(folder or os.curdir, '.git')):
-        return None
-    branches = []
-    try:
-        b = git('branch --show-current', folder, optional=True)
-        if b == '':
-            branches = git('branch', folder).split('\n')
-        if len(branches) > 0:
-            b = [x for x in branches if x.startswith('*')][0]
-            if 'detached' in b and len(branches) > 1:
-                b = branches[1].strip()
-                log.debug(f'Git detached head detected: folder="{folder}" reattach={b}')
-    except Exception:
-        b = git('git rev-parse --abbrev-ref HEAD', folder, optional=True)
-    if 'main' in b:
-        b = 'main'
-    elif 'master' in b:
-        b = 'master'
-    else:
-        b = b.split('\n')[0].replace('*', '').strip()
-    log.debug(f'Git submodule: {folder} / {b}')
-    git(f'checkout {b}', folder, ignore=True, optional=True)
-    ts('branch', t_start)
-    return b
 
 
 # restart process
@@ -539,51 +479,10 @@ def restart():
 
 # update git repository
 def update(folder, keep_branch = False, rebase = True):
-    t_start = time.time()
-    try:
-        git('config rebase.Autostash true')
-    except Exception:
-        pass
-    arg = '--rebase --force' if rebase else ''
-    if keep_branch:
-        res = git(f'pull {arg}', folder)
-        debug(f'Install update: folder={folder} args={arg} {res}')
-    else:
-        b = branch(folder)
-        if branch is None:
-            res = git(f'pull {arg}', folder)
-            debug(f'Install update: folder={folder} branch={b} args={arg} {res}')
-        else:
-            res = git(f'pull origin {b} {arg}', folder)
-            debug(f'Install update: folder={folder} branch={b} args={arg} {res}')
-        if not args.experimental:
-            commit = extensions_commit.get(os.path.basename(folder), None)
-            if commit is not None:
-                res = git(f'checkout {commit}', folder)
-                debug(f'Install update: folder={folder} branch={b} args={arg} commit={commit} {res}')
-    ts('update', t_start)
-    return res
 
 
-# clone git repository
-def clone(url, folder, commithash=None):
-    t_start = time.time()
-    if os.path.exists(folder):
-        if commithash is None:
-            update(folder)
-        else:
-            current_hash = git('rev-parse HEAD', folder).strip()
-            if current_hash != commithash:
-                res = git('fetch', folder)
-                debug(f'Install clone: {res}')
-                git(f'checkout {commithash}', folder)
-                return
-    else:
-        log.info(f'Cloning repository: {url}')
-        git(f'clone "{url}" "{folder}"')
-        if commithash is not None:
-            git(f'-C "{folder}" checkout {commithash}')
-    ts('clone', t_start)
+    return "fuckmandic"
+
 
 
 def get_platform():
@@ -1049,27 +948,6 @@ def check_torch():
     ts('torch', t_start)
 
 
-# check modified files
-def check_modified_files():
-    t_start = time.time()
-    if args.quick:
-        return
-    if args.skip_git:
-        return
-    try:
-        res = git('status --porcelain')
-        files = [x[2:].strip() for x in res.split('\n')]
-        files = [x for x in files if len(x) > 0 and (not x.startswith('extensions')) and (not x.startswith('wiki')) and (not x.endswith('.json')) and ('.log' not in x)]
-        deleted = [x for x in files if not os.path.exists(x)]
-        if len(deleted) > 0:
-            log.warning(f'Deleted files: {deleted}')
-        modified = [x for x in files if os.path.exists(x) and not os.path.isdir(x)]
-        if len(modified) > 0:
-            log.warning(f'Modified files: {modified}')
-    except Exception:
-        pass
-    ts('files', t_start)
-
 
 # install required packages
 def install_packages():
@@ -1148,41 +1026,6 @@ def install_extensions(force=False):
     extensions_disabled = [e.lower() for e in opts.get('disabled_extensions', [])]
     extension_folders = [extensions_builtin_dir] if args.safe else [extensions_builtin_dir, extensions_dir]
     res = []
-    for folder in extension_folders:
-        if not os.path.isdir(folder):
-            continue
-        extensions = list_extensions_folder(folder, quiet=True)
-        log.debug(f'Extensions all: {extensions}')
-        for ext in extensions:
-            if os.path.basename(ext).lower() in extensions_disabled:
-                continue
-            t_start = time.time()
-            if ext in extensions_enabled:
-                extensions_duplicates.append(ext)
-                continue
-            extensions_enabled.append(ext)
-            if args.upgrade or force:
-                try:
-                    res.append(update(os.path.join(folder, ext)))
-                except Exception:
-                    res.append(f'Extension update error: {os.path.join(folder, ext)}')
-                    log.error(f'Extension update error: {os.path.join(folder, ext)}')
-            if not args.skip_extensions:
-                commit = extensions_commit.get(os.path.basename(ext), None)
-                if commit is not None:
-                    log.debug(f'Extension force: name="{ext}" commit={commit}')
-                    res.append(git(f'checkout {commit}', os.path.join(folder, ext)))
-                run_extension_installer(os.path.join(folder, ext))
-            pkg_resources._initialize_master_working_set() # pylint: disable=protected-access
-            try:
-                updated = [f'{p.project_name}=={p._version}' for p in pkg_resources.working_set] # pylint: disable=protected-access,not-an-iterable
-                diff = [x for x in updated if x not in pkgs]
-                pkgs = updated
-                if len(diff) > 0:
-                    log.info(f'Extension installed packages: {ext} {diff}')
-            except Exception as e:
-                log.error(f'Extension installed unknown package: {e}')
-            ts(ext, t_start)
     log.info(f'Extensions enabled: {extensions_enabled}')
     if len(extensions_duplicates) > 0:
         log.warning(f'Extensions duplicates: {extensions_duplicates}')
@@ -1192,39 +1035,6 @@ def install_extensions(force=False):
     # ts('extensions', t_start)
     return '\n'.join(res)
 
-
-# initialize and optionally update submodules
-def install_submodules(force=True):
-    t_start = time.time()
-    if args.profile:
-        pr = cProfile.Profile()
-        pr.enable()
-    log.info('Verifying submodules')
-    txt = git('submodule')
-    # log.debug(f'Submodules list: {txt}')
-    if force and 'no submodule mapping found' in txt and 'extension-builtin' not in txt:
-        txt = git('submodule')
-        git_reset()
-        log.info('Continuing setup')
-    git('submodule --quiet update --init --recursive')
-    git('submodule --quiet sync --recursive')
-    submodules = txt.splitlines()
-    res = []
-    for submodule in submodules:
-        try:
-            name = submodule.split()[1].strip()
-            if args.upgrade:
-                res.append(update(name))
-            else:
-                branch(name)
-        except Exception:
-            log.error(f'Submodule update error: {submodule}')
-    setup_logging()
-    if args.profile:
-        pr.disable()
-        print_profile(pr, 'Submodule')
-    ts('submodules', t_start)
-    return '\n'.join(res)
 
 
 def reload(package, desired=None):
@@ -1443,119 +1253,7 @@ def set_environment():
     log.debug(f'Torch allocator: "{allocator}"')
 
 
-def check_extensions():
-    newest_all = os.path.getmtime('requirements.txt')
-    from modules.paths import extensions_builtin_dir, extensions_dir
-    extension_folders = [extensions_builtin_dir] if args.safe else [extensions_builtin_dir, extensions_dir]
-    disabled_extensions_all = opts.get('disable_all_extensions', 'none')
-    if disabled_extensions_all != 'none':
-        log.info(f'Extensions: disabled={disabled_extensions_all}')
-    else:
-        log.info(f'Extensions: disabled={opts.get("disabled_extensions", [])}')
-    for folder in extension_folders:
-        if not os.path.isdir(folder):
-            continue
-        extensions = list_extensions_folder(folder)
-        for ext in extensions:
-            newest = 0
-            extension_dir = os.path.join(folder, ext)
-            if not os.path.isdir(extension_dir):
-                log.debug(f'Extension listed as installed but folder missing: {extension_dir}')
-                continue
-            for f in os.listdir(extension_dir):
-                if '.json' in f or '.csv' in f or '__pycache__' in f:
-                    continue
-                mtime = os.path.getmtime(os.path.join(extension_dir, f))
-                newest = max(newest, mtime)
-            newest_all = max(newest_all, newest)
-            # log.debug(f'Extension version: {time.ctime(newest)} {folder}{os.path.sep}{ext}')
-    return round(newest_all)
 
-
-def get_version(force=False):
-    t_start = time.time()
-    if (version is None) or (version.get('branch', 'unknown') == 'unknown') or force:
-        try:
-            subprocess.run('git config log.showsignature false', stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell=True, check=True)
-        except Exception:
-            pass
-        try:
-            res = subprocess.run('git log --pretty=format:"%h %ad" -1 --date=short', stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell=True, check=True)
-            ver = res.stdout.decode(encoding = 'utf8', errors='ignore') if len(res.stdout) > 0 else '  '
-            commit, updated = ver.split(' ')
-            version['commit'], version['updated'] = commit, updated
-        except Exception as e:
-            log.warning(f'Version: where=commit {e}')
-        try:
-            res = subprocess.run('git remote get-url origin', stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell=True, check=True)
-            origin = res.stdout.decode(encoding = 'utf8', errors='ignore') if len(res.stdout) > 0 else ''
-            res = subprocess.run('git rev-parse --abbrev-ref HEAD', stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell=True, check=True)
-            branch_name = res.stdout.decode(encoding = 'utf8', errors='ignore') if len(res.stdout) > 0 else ''
-            version['url'] = origin.replace('\n', '').removesuffix('.git') + '/tree/' + branch_name.replace('\n', '')
-            version['branch'] = branch_name.replace('\n', '')
-            if version['branch'] == 'HEAD':
-                log.warning('Version: detached state detected')
-        except Exception as e:
-            log.warning(f'Version: where=branch {e}')
-        cwd = os.getcwd()
-        try:
-            if os.path.exists('extensions-builtin/sdnext-modernui'):
-                os.chdir('extensions-builtin/sdnext-modernui')
-                res = subprocess.run('git rev-parse --abbrev-ref HEAD', stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell=True, check=True)
-                branch_ui = res.stdout.decode(encoding = 'utf8', errors='ignore') if len(res.stdout) > 0 else ''
-                branch_ui = 'dev' if 'dev' in branch_ui else 'main'
-                version['ui'] = branch_ui
-            else:
-                version['ui'] = 'unavailable'
-        except Exception as e:
-            log.warning(f'Version: where=modernui {e}')
-            version['ui'] = 'unknown'
-        finally:
-            os.chdir(cwd)
-        try:
-            if os.environ.get('SD_KANVAS_DISABLE', None) is not None:
-                version['kanvas'] = 'disabled'
-            elif os.path.exists('extensions-builtin/sdnext-kanvas'):
-                os.chdir('extensions-builtin/sdnext-kanvas')
-                res = subprocess.run('git rev-parse --abbrev-ref HEAD', stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell=True, check=True)
-                branch_kanvas = res.stdout.decode(encoding = 'utf8', errors='ignore') if len(res.stdout) > 0 else ''
-                branch_kanvas = 'dev' if 'dev' in branch_kanvas else 'main'
-                version['kanvas'] = branch_kanvas
-            else:
-                version['kanvas'] = 'unavailable'
-        except Exception as e:
-            log.warning(f'Version: where=kanvas {e}')
-            version['kanvas'] = 'unknown'
-        finally:
-            os.chdir(cwd)
-    ts('version', t_start)
-    return version
-
-
-def check_ui(ver):
-    def same(ver):
-        core = ver['branch'] if ver is not None and 'branch' in ver else 'unknown'
-        ui = ver['ui'] if ver is not None and 'ui' in ver else 'unknown'
-        return (core == ui) or (core == 'master' and ui == 'main') or (core == 'dev' and ui == 'dev') or (core == 'HEAD')
-
-    t_start = time.time()
-    if not same(ver):
-        log.debug(f'Branch mismatch: sdnext={ver["branch"]} ui={ver["ui"]}')
-        cwd = os.getcwd()
-        try:
-            os.chdir('extensions-builtin/sdnext-modernui')
-            target = 'dev' if 'dev' in ver['branch'] else 'main'
-            git('checkout ' + target, ignore=True, optional=True)
-            os.chdir(cwd)
-            ver = get_version(force=True)
-            if not same(ver):
-                log.debug(f'Branch synchronized: {ver["branch"]}')
-            else:
-                log.debug(f'Branch sync failed: sdnext={ver["branch"]} ui={ver["ui"]}')
-        except Exception as e:
-            log.debug(f'Branch switch: {e}')
-        os.chdir(cwd)
-    ts('ui', t_start)
 
 
 def check_venv():
@@ -1588,131 +1286,6 @@ def check_venv():
     ts('venv', t_start)
 
 
-# check version of the main repo and optionally upgrade it
-def check_version(reset=True): # pylint: disable=unused-argument
-    if opts.get('offline_mode', False):
-        log.warning('Offline mode enabled')
-        args.skip_git = True # pylint: disable=attribute-defined-outside-init
-        args.skip_all = True # pylint: disable=attribute-defined-outside-init
-        return
-    t_start = time.time()
-    if args.skip_all:
-        return
-    if not os.path.exists('.git'):
-        log.warning('Not a git repository')
-        args.skip_git = True # pylint: disable=attribute-defined-outside-init
-    ver = get_version()
-    log.info(f'Version: {print_dict(ver)}')
-    branch_name = ver.get('branch', None) if ver is not None else 'master'
-    if branch_name is None or branch_name == 'unknown':
-        branch_name = 'master'
-    if args.version or args.skip_git:
-        return
-    check_ui(ver)
-    commit = git('rev-parse HEAD')
-    global git_commit # pylint: disable=global-statement
-    git_commit = commit[:7]
-    if args.quick:
-        return
-    try:
-        import requests
-    except ImportError:
-        return
-    commits = None
-    branch_names = []
-    try:
-        branches = requests.get('https://api.github.com/repos/vladmandic/sdnext/branches', timeout=10).json()
-        branch_names = [b['name'] for b in branches if 'name' in b]
-        log.trace(f'Repository branches: active={branch_name} available={branch_names}')
-    except Exception as e:
-        log.error(f'Repository: failed to get branches: {e}')
-        return
-    if branch_name not in branch_names:
-        log.warning(f'Repository: branch={branch_name} skipping update')
-        ts('latest', t_start)
-        return
-    try:
-        commits = requests.get(f'https://api.github.com/repos/vladmandic/sdnext/branches/{branch_name}', timeout=10).json()
-        latest = commits['commit']['sha']
-        if len(latest) != 40:
-            log.error(f'Repository error: commit={latest} invalid')
-        elif latest != commit and args.upgrade:
-            global quick_allowed # pylint: disable=global-statement
-            quick_allowed = False
-            log.info('Updating main repository')
-            try:
-                git('add .')
-                git('stash')
-                update('.', keep_branch=True)
-                # git('git stash pop')
-                ver = git('log -1 --pretty=format:"%h %ad"')
-                log.info(f'Repository upgraded: {ver}')
-                log.warning('Server restart is recommended to apply changes')
-                if ver == latest: # double check
-                    restart()
-            except Exception:
-                if not reset:
-                    log.error('Repository error upgrading')
-                else:
-                    log.warning('Repository: retrying upgrade...')
-                    git_reset()
-                    check_version(reset=False)
-        else:
-            dt = commits["commit"]["commit"]["author"]["date"]
-            commit = commits["commit"]["sha"][:8]
-            log.info(f'Version: app=sd.next latest={dt} hash={commit} branch={branch_name}')
-    except Exception as e:
-        log.error(f'Repository failed to check version: {e} {commits}')
-    ts('latest', t_start)
-
-
-def update_wiki():
-    t_start = time.time()
-    if args.upgrade:
-        log.info('Updating Wiki')
-        try:
-            update(os.path.join(os.path.dirname(__file__), "wiki"))
-        except Exception:
-            log.error('Wiki update error')
-    ts('wiki', t_start)
-
-
-# check if we can run setup in quick mode
-def check_timestamp():
-    if not quick_allowed or not os.path.isfile(log_file):
-        return False
-    if args.quick:
-        return True
-    if args.skip_git:
-        return True
-    ok = True
-    setup_time = -1
-    version_time = -1
-    with open(log_file, 'r', encoding='utf8') as f:
-        lines = f.readlines()
-        for line in lines:
-            if 'Setup complete without errors' in line:
-                setup_time = int(line.split(' ')[-1])
-    try:
-        version_time = git('log -1 --pretty=format:"%at"')
-        version_time = ''.join(filter(str.isdigit, version_time))
-        version_time = int(version_time) if len(version_time) > 0 else -1
-        log.debug(f'Timestamp repository update time: {time.ctime(version_time)}')
-    except Exception as e:
-        log.error(f'Timestamp local repository version: {e}')
-    if setup_time == -1:
-        return False
-    log.debug(f'Timestamp previous setup time: {time.ctime(setup_time)}')
-    if setup_time < version_time or version_time == -1:
-        ok = False
-    extension_time = check_extensions()
-    log.debug(f'Timestamp latest extensions time: {time.ctime(extension_time)}')
-    if setup_time < extension_time:
-        ok = False
-    log.debug(f'Timestamp: version:{version_time} setup:{setup_time} extension:{extension_time}')
-    if args.reinstall:
-        ok = False
-    return ok
 
 
 def add_args(parser):
@@ -1720,7 +1293,6 @@ def add_args(parser):
     group_install = parser.add_argument_group('Install')
     group_install.add_argument('--quick', default=os.environ.get("SD_QUICK",False), action='store_true', help="Bypass version checks, default: %(default)s")
     group_install.add_argument('--reset', default=os.environ.get("SD_RESET",False), action='store_true', help="Reset main repository to latest version, default: %(default)s")
-    group_install.add_argument('--upgrade', '--update', default=os.environ.get("SD_UPGRADE",False), action='store_true', help="Upgrade main repository to latest version, default: %(default)s")
     group_install.add_argument('--requirements', default=os.environ.get("SD_REQUIREMENTS",False), action='store_true', help="Force re-check of requirements, default: %(default)s")
     group_install.add_argument('--reinstall', default=os.environ.get("SD_REINSTALL",False), action='store_true', help="Force reinstallation of all requirements, default: %(default)s")
     group_install.add_argument('--uv', default=os.environ.get("SD_UV",False), action='store_true', help="Use uv instead of pip to install the packages")
@@ -1830,25 +1402,6 @@ def extensions_preload(parser):
         print_profile(pr, 'Preload')
     ts('preload', t_start)
 
-
-def git_reset(folder='.'):
-    t_start = time.time()
-    log.warning('Running GIT reset')
-    global quick_allowed # pylint: disable=global-statement
-    quick_allowed = False
-    b = branch(folder)
-    if b is None or b == '':
-        b = 'master'
-    git('add .')
-    git('stash')
-    git('merge --abort', folder=None, ignore=True)
-    git('fetch --all')
-    git(f'reset --hard origin/{b}')
-    git(f'checkout {b}')
-    git('submodule update --init --recursive')
-    git('submodule sync --recursive')
-    log.info('GIT reset complete')
-    ts('reset', t_start)
 
 
 def read_options():
