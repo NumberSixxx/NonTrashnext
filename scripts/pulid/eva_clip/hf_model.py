@@ -92,7 +92,7 @@ class HFTextEncoder(nn.Module):
         if transformers is None:
             raise RuntimeError("Please `pip install transformers` to use pre-trained HuggingFace models")
         if config is None:
-            self.config = AutoConfig.from_pretrained(model_name_or_path)
+            self.config = AutoConfig.from_pretrained(model_name_or_path, local_files_only=True, trust_remote_code=False)
             if masked_language_modeling:
                 create_func, model_args = (AutoModelForMaskedLM.from_pretrained, model_name_or_path) if pretrained else (
                     AutoModelForMaskedLM.from_config, self.config)

@@ -454,9 +454,6 @@ def pip(arg: str, ignore: bool = False, quiet: bool = True, uv = True):
 def install(package, friendly: str = None, ignore: bool = False, reinstall: bool = False, no_deps: bool = False, quiet: bool = False, force: bool = False):
     t_start = time.time()
     res = ''
-    if args.reinstall or args.upgrade:
-        global quick_allowed # pylint: disable=global-statement
-        quick_allowed = False
     if (args.reinstall) or (reinstall) or (not installed(package, friendly, quiet=quiet)):
         deps = '' if not no_deps else '--no-deps '
         cmd = f"install{' --upgrade' if not args.uv else ''}{' --force-reinstall' if force else ''} {deps}{package}"
@@ -884,7 +881,7 @@ def check_torch():
     if 'torch' in torch_command:
         if not installed('torch'):
             log.info(f'Torch: download and install in progress... cmd="{torch_command}"')
-            install('--upgrade pip', 'pip', reinstall=True) # pytorch rocm is too large for older pip
+            install('--upgrade pip', 'pip') # pytorch rocm is too large for older pip
         install(torch_command, 'torch torchvision', quiet=True)
 
     try:

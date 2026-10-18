@@ -246,7 +246,6 @@ def main():
         installer.git_reset()
     if args.skip_git or args.skip_all:
         installer.log.info('Skipping GIT operations')
-    installer.check_version()
     installer.log.info(f'Platform: {installer.print_dict(installer.get_platform())}')
     installer.check_venv()
     installer.log.info(f'Args: {sys.argv[1:]}')
@@ -254,17 +253,12 @@ def main():
         installer.set_environment()
     if args.uv:
         installer.install("uv", "uv")
-    installer.install_gradio()
     installer.check_torch()
     installer.check_onnx()
     installer.check_transformers()
     installer.check_diffusers()
-    installer.check_modified_files()
     if args.test:
         installer.log.info('Startup: test mode')
-        installer.quick_allowed = False
-    if args.reinstall:
-        installer.log.info('Startup: force reinstall of all packages')
         installer.quick_allowed = False
     if args.skip_all:
         installer.log.info('Startup: skip all')
@@ -273,23 +267,6 @@ def main():
     else:
         installer.install_requirements()
         installer.install_packages()
-        if installer.check_timestamp():
-            installer.log.info('Startup: quick launch')
-            init_paths()
-            installer.check_extensions()
-        else:
-            installer.log.info('Startup: standard')
-            installer.install_submodules()
-            init_paths()
-            installer.install_extensions()
-            installer.install_requirements() # redo requirements since extensions may change them
-            installer.update_wiki()
-            if len(installer.errors) == 0:
-                installer.log.debug(f'Setup complete without errors: {round(time.time())}')
-            else:
-                installer.log.warning(f'Setup complete with errors: {installer.errors}')
-                installer.log.warning(f'See log file for more details: {installer.log_file}')
-    installer.extensions_preload(parser) # adds additional args from extensions
     args = installer.parse_args(parser)
     installer.log.info(f'Installer time: {init_summary()}')
     get_custom_args()

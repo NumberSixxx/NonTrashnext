@@ -101,7 +101,7 @@ def load_sdnq_model(model_path: str, model_cls: ModelMixin = None, file_name: st
             config = model_cls.load_config(model_path)
             model = model_cls.from_config(config)
         elif hasattr(model_cls, "_from_config"):
-            config = transformers.AutoConfig.from_pretrained(model_path)
+            config = transformers.AutoConfig.from_pretrained(model_path,local_files_only=True, trust_remote_code=False)
             model = model_cls(config)
         else:
             model = model_cls(**model_config)
